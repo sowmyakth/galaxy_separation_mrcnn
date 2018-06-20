@@ -11,7 +11,7 @@ This code uses the Python 3, Keras, and TensorFlow [implementation](https://gith
 
 * [evaluate.py](scripts/evaluate.py) runs the network on validation set to test performance.
 
-Our dataset image size is 120 \times 120, much smaller than the 800 \times 800 for training the MS COCO dataset. Thus the RPN anchor sizes were reduced in proportion in order to be able to detect features with scales desired here.  
+Our dataset image size is 120x120 , much smaller than the 800x800 for training the MS COCO dataset. Thus the RPN anchor sizes were reduced in proportion in order to be able to detect features with scales desired here.  
 
 # Training Data
 
