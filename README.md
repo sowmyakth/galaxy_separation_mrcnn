@@ -20,6 +20,14 @@ Our dataset image size is 120x120 , much smaller than the 800x800 for training t
 
 The network was trained on simulated overlapping galaxy images with varying degrees of overlap. The galaxies were simulated using WeakLensingDeblending Package as sersic bulge + disk profiles. Segmentation maps are regions with pixel values above a threshold value for each galaxy.
 
-The trained network is able to detect individual galaxies in the overlapping pair images along with producing a segmentation mask and bounding box.
+The trained network is able to detect individual galaxies in the overlapping pair images along with producing a segmentation mask and bounding box. An example is shown below: image of overlapping galaxies input to network with the true segmentation mask and bounding box(left) and the network predictions (right). 
 
 ![](images/good_eg.png)
+
+
+# Ongoing Work
+
+* Make network accept images with variable number of color channels (1-6).
+* Modify network to output images of each galaxy.
+* Train on more complicated overlaps: Increase number of objects & types of objects.
+* Modify network for astronomical images: varying background noise, varying distortion (PSF) across images and color channels.
