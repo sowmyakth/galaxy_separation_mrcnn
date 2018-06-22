@@ -2,7 +2,7 @@
 
 Most observed astronomical objects have some overlap with neighboring objects. However, scientific measurements require isolated galaxy images. We explore the application Mask Region-based CNN ([Mask R-CNN](https://arxiv.org/abs/1703.06870)) to separate images of overlapping astronomical bodies ("deblending").
 
-*This repository is a research project work in progress.*
+*This repository is a part of a research project in progress.*
 This code uses the Python 3, Keras, and TensorFlow [implementation](https://github.com/matterport/Mask_RCNN) of Mask R-CNN to perform instance segmentation on images of overlapping galaxy pairs. The out-of-the-box implementation of MRCNN is optimized for performing images on the [MS COCO Dataset](http://cocodataset.org/#home). 
 
 * ([model.py](mrcnn/model.py), [utils.py](mrcnn/utils.py), [config.py](mrcnn/config.py)): These files contain the main Mask RCNN implementation. 
