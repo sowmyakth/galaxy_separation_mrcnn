@@ -1013,6 +1013,16 @@ def smooth_l1_loss(y_true, y_pred):
     return loss
 
 
+# MODIFICATION
+def l2_loss(y_true, y_pred):
+    """Implements Smooth-L1 loss.
+    y_true and y_pred are typicallly: [N, 4], but could be any shape.
+    """
+    diff = (y_true - y_pred)**2
+    loss = K.mean(diff)
+    return loss / 2.
+
+
 def rpn_class_loss_graph(rpn_match, rpn_class_logits):
     """RPN anchor classifier loss.
 
@@ -1174,6 +1184,42 @@ def mrcnn_mask_loss_graph(target_masks, target_class_ids, pred_masks):
                     K.binary_crossentropy(target=y_true, output=y_pred),
                     tf.constant(0.0))
     loss = K.mean(loss)
+    return loss
+
+
+# MODIFICATION
+def mrcnn_debl_loss_graph(target_images, target_class_ids, pred_images):
+    """Mask binary cross-entropy loss for the masks head.
+
+    target_masks: [batch, num_rois, height, width].
+        A float32 tensor of values 0 or 1. Uses zero padding to fill array.
+    target_class_ids: [batch, num_rois]. Integer class IDs. Zero padded.
+    pred_masks: [batch, proposals, height, width, num_classes] float32 tensor
+                with values from 0 to 1.
+    """
+    # Reshape for simplicity. Merge first two dimensions into one.
+    target_class_ids = K.reshape(target_class_ids, (-1,))
+    mask_shape = tf.shape(target_images)
+    target_images = K.reshape(target_images, (-1, mask_shape[2], mask_shape[3]))
+    pred_shape = tf.shape(pred_images)
+    pred_images = K.reshape(pred_images,
+                            (-1, pred_shape[2], pred_shape[3], pred_shape[4]))
+    # Permute predicted masks to [N, num_classes, height, width]
+    pred_images = tf.transpose(pred_images, [0, 3, 1, 2])
+
+    # Only positive ROIs contribute to the loss. And only
+    # the class specific mask of each ROI.
+    positive_ix = tf.where(target_class_ids > 0)[:, 0]
+    positive_class_ids = tf.cast(
+        tf.gather(target_class_ids, positive_ix), tf.int64)
+    indices = tf.stack([positive_ix, positive_class_ids], axis=1)
+
+    # Gather the masks (predicted and true) that contribute to loss
+    y_true = tf.gather(target_images, positive_ix)
+    y_pred = tf.gather_nd(pred_images, indices)
+
+    # Compute L2 Loss
+    loss = l2_loss(y_true, y_pred)
     return loss
 
 
@@ -1997,6 +2043,10 @@ class MaskRCNN():
             bbox_loss = KL.Lambda(lambda x: mrcnn_bbox_loss_graph(*x), name="mrcnn_bbox_loss")(
                 [target_bbox, target_class_ids, mrcnn_bbox])
             mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
+                [target_mask, target_class_ids, mrcnn_mask])
+            # MODIFICATION
+            # Loss computed as L2 loss between 
+            debl_loss = KL.Lambda(lambda x: mrcnn_debl_loss_graph(*x), name="debl_mask_loss")(
                 [target_mask, target_class_ids, mrcnn_mask])
 
             # Model
