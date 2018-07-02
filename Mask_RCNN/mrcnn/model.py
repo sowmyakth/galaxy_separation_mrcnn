@@ -1199,9 +1199,9 @@ def mrcnn_debl_loss_graph(target_images, target_class_ids, pred_images):
     """
     # Reshape for simplicity. Merge first two dimensions into one.
     target_class_ids = K.reshape(target_class_ids, (-1,))
-    mask_shape = tf.shape(target_images)
+    target_shape = tf.shape(target_images)
     target_images = K.reshape(target_images,
-                              (-1, mask_shape[2], mask_shape[3]))
+                              (-1, target_shape[2], target_shape[3]))
     pred_shape = tf.shape(pred_images)
     pred_images = K.reshape(pred_images,
                             (-1, pred_shape[2], pred_shape[3], pred_shape[4]))
@@ -1291,7 +1291,8 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     return image, image_meta, class_ids, bbox, mask
 
 
-def build_detection_targets(rpn_rois, gt_class_ids, gt_boxes, gt_masks, config):
+def build_detection_targets(rpn_rois, gt_class_ids, gt_boxes,
+                            gt_masks, config):
     """Generate targets for training Stage 2 classifier and mask heads.
     This is not used in normal training. It's useful for debugging or to train
     the Mask RCNN heads without using the RPN head.
