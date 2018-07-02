@@ -517,17 +517,6 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, config)
     gt_masks = tf.gather(gt_masks, tf.where(non_zeros)[:, 0], axis=2,
                          name="trim_gt_masks")
 
-    # Handle COCO crowds
-    # A crowd box in COCO is a bounding box around several instances. Exclude
-    # them from training. A crowd box is given a negative class ID.
-    crowd_ix = tf.where(gt_class_ids < 0)[:, 0]
-    non_crowd_ix = tf.where(gt_class_ids > 0)[:, 0]
-    crowd_boxes = tf.gather(gt_boxes, crowd_ix)
-    crowd_masks = tf.gather(gt_masks, crowd_ix, axis=2)
-    gt_class_ids = tf.gather(gt_class_ids, non_crowd_ix)
-    gt_boxes = tf.gather(gt_boxes, non_crowd_ix)
-    gt_masks = tf.gather(gt_masks, non_crowd_ix, axis=2)
-
     # Compute overlaps matrix [proposals, gt_boxes]
     overlaps = overlaps_graph(proposals, gt_boxes)
 
@@ -1991,7 +1980,8 @@ class MaskRCNN():
                                               config.MASK_POOL_SIZE,
                                               config.NUM_CLASSES,
                                               train_bn=config.TRAIN_BN)
-
+            #MODIFICATION
+            mrcnn_images = get_image_from_mask(mrcnn_mask, input_image)
             # TODO: clean up (use tf.identify if necessary)
             output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
 
@@ -2839,3 +2829,8 @@ def denorm_boxes_graph(boxes, shape):
     scale = tf.concat([h, w, h, w], axis=-1) - tf.constant(1.0)
     shift = tf.constant([0., 0., 1., 1.])
     return tf.cast(tf.round(tf.multiply(boxes, scale) + shift), tf.int32)
+
+
+def get_image_from_mask(mrcnn_mask, input_image):
+    mrcnn_images = mrcnn_mask * input_image[1, :, :]
+    return mrcnn_images
