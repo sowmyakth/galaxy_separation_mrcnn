@@ -19,6 +19,9 @@ from skimage.measure import find_contours
 import matplotlib.pyplot as plt
 from matplotlib import patches,  lines
 from matplotlib.patches import Polygon
+import matplotlib
+matplotlib.rcParams['figure.subplot.wspace'] = 0.05
+matplotlib.rcParams['figure.subplot.hspace'] = 0.05
 import IPython.display
 
 # Root directory of the project
@@ -34,7 +37,7 @@ from mrcnn import utils
 ############################################################
 
 def display_images(images, titles=None, cols=4, cmap=None, norm=None,
-                   interpolation=None):
+                   interpolation='none', limits=None):
     """Display the given set of images, optionally with titles.
     images: list or array of image tensors in HWC format.
     titles: optional. A list of titles to display with each image.
@@ -57,6 +60,9 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
         #plt.imshow(image, cmap=cmap,
         #           norm=norm, interpolation=interpolation)
         i += 1
+        if limits:
+            plt.xlim(limits)
+            plt.ylim(limits)
     plt.show()
 
 
@@ -88,7 +94,8 @@ def display_instances(image, boxes, masks, class_ids, class_names,
                       scores=None, title="",
                       figsize=(16, 16), ax=None,
                       show_mask=True, show_bbox=True,
-                      colors=None, captions=None):
+                      colors=None, captions=None,
+                      limits=None, mask_alpha=0.2):
     """
     boxes: [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
     masks: [height, width, num_instances]
@@ -148,13 +155,14 @@ def display_instances(image, boxes, masks, class_ids, class_names,
             caption = "{} {:.3f}".format(label, score) if score else label
         else:
             caption = captions[i]
-        ax.text(x1, y1 + 8, caption,
-                color='w', size=11, backgroundcolor="none")
+        #MODIFIED
+        #ax.text(x1, y1 + 8, caption,
+        #        color='w', size=11, backgroundcolor="none")
 
         # Mask
         mask = masks[:, :, i]
         if show_mask:
-            masked_image = apply_mask(masked_image, mask, color)
+            masked_image = apply_mask(masked_image, mask, color, alpha=mask_alpha)
 
         # Mask Polygon
         # Pad to ensure proper polygons for masks that touch image edges.
@@ -168,6 +176,9 @@ def display_instances(image, boxes, masks, class_ids, class_names,
             p = Polygon(verts, facecolor="none", edgecolor=color)
             ax.add_patch(p)
     ax.imshow(masked_image.astype(np.uint8))
+    if limits:
+        ax.set_xlim(limits)
+        ax.set_ylim(limits)
     if auto_show:
         plt.show()
 
@@ -177,7 +188,8 @@ def display_differences(image,
                         pred_box, pred_class_id, pred_score, pred_mask,
                         class_names, title="", ax=None,
                         show_mask=True, show_box=True,
-                        iou_threshold=0.5, score_threshold=0.5):
+                        iou_threshold=0.5, score_threshold=0.5,
+                        limits=None, mask_alpha=0.2):
     """Display ground truth and prediction instances on the same image."""
     # Match predictions to ground truth
     gt_match, pred_match, overlaps = utils.compute_matches(
@@ -205,9 +217,9 @@ def display_differences(image,
         image,
         boxes, masks, class_ids,
         class_names, scores, ax=ax,
-        show_bbox=show_box, show_mask=show_mask,
-        colors=colors, captions=captions,
-        title=title)
+        show_bbox=False, show_mask=show_mask,
+        colors=colors, captions=None,
+        title="", limits=limits, mask_alpha=mask_alpha)
 
 
 def draw_rois(image, rois, refined_rois, mask, class_ids, class_names, limit=10):
@@ -307,6 +319,31 @@ def display_top_masks(image, mask, class_ids, class_names, limit=4):
     display_images(to_display, titles=titles, cols=limit + 1, cmap="Blues_r")
 
 
+def display_sep_masks(image, mask, class_ids, class_names, limit=4, im_limits=None):
+    """Display the given image and the class masks as separate images."""
+    to_display = []
+    titles = []
+    to_display.append(image)
+    titles.append("H x W={}x{}".format(image.shape[0], image.shape[1]))
+    # Pick top prominent classes in this image
+    unique_class_ids = np.unique(class_ids)
+    mask_area = [np.sum(mask[:, :, np.where(class_ids == i)[0]])
+                 for i in unique_class_ids]
+    top_ids = [v[0] for v in sorted(zip(unique_class_ids, mask_area),
+                                    key=lambda r: r[1], reverse=True) if v[1] > 0]
+    # Generate images and titles
+    for i in range(limit):
+        class_id = top_ids[i] if i < len(top_ids) else -1
+        # Pull masks of instances belonging to the same class.
+        m = mask[:, :, np.where(class_ids == class_id)[0]]
+        #m = np.sum(m * np.arange(1, m.shape[-1] + 1), -1)
+        print ("mask shape", m.shape, len(m))
+        for i in range(m.shape[-1]):
+            to_display.append(mask[:, :, i])
+            titles.append(class_names[class_id] + str(i) if class_id != -1 else "-")
+    display_images(to_display, titles=titles, cols=limit + 1, cmap="Blues_r", limits=im_limits)
+
+
 def plot_precision_recall(AP, precisions, recalls, ax=None):
     """Draw the precision-recall curve.
 
@@ -339,7 +376,7 @@ def plot_overlaps(gt_class_ids, pred_class_ids, pred_scores,
     pred_class_ids = pred_class_ids[pred_class_ids != 0]
 
     plt.figure(figsize=(12, 10))
-    plt.imshow(overlaps, interpolation='nearest', cmap=plt.cm.Blues)
+    plt.imshow(overlaps, interpolation='none', cmap=plt.cm.Blues)
     plt.yticks(np.arange(len(pred_class_ids)),
                ["{} ({:.2f})".format(class_names[int(id)], pred_scores[i])
                 for i, id in enumerate(pred_class_ids)])
