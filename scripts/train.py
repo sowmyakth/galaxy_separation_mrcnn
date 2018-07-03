@@ -21,7 +21,8 @@ CODE_PATH = '/home/users/sowmyak/NN_blend/scripts'
 sys.path.append(CODE_PATH)
 import display
 
-MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final20180608T2004/mask_rcnn_blend_final_0050.h5'
+# MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final20180608T2004/mask_rcnn_blend_final_0050.h5'
+MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final_again20180608T2004/mask_rcnn_blend_final_again_0080.h5'
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
@@ -133,6 +134,17 @@ class ShapesDataset(utils.Dataset):
         image = self.X['blend_image'][image_id, :, :, :]
         rgb_image = display.img_to_rgb(image.T)
         return rgb_image
+
+    def load_debl_image(self, image_id):
+        """Generate an image from the specs of the given image ID.
+        Typically this function loads the image from a file, but
+        in this case it generates the image on the fly from the
+        specs in image_info.
+        """
+        im1 = self.X['Y1'][image_id, :, :, 0]
+        im2 = self.X['Y2'][image_id, :, :, 0]
+        debl_image = np.dstack([im1, im2])
+        return debl_image
 
     def image_reference(self, image_id):
         """Return the shapes data of the image."""

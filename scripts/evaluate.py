@@ -5,6 +5,8 @@ import pickle
 import dill
 import random
 import matplotlib; matplotlib.use('Agg')
+matplotlib.rcParams['figure.subplot.wspace'] = 0.05
+matplotlib.rcParams['figure.subplot.hspace'] = 0.05
 import matplotlib.pyplot as plt
 import h5py
 
@@ -22,7 +24,8 @@ MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final_again20180608T200
 #MODEL_PATH =None
 sys.path.append(CODE_PATH)
 import display
-import train_final_again as train
+import train as train
+#import train_final_again as train
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
@@ -35,9 +38,36 @@ from mrcnn.model import log
 
 COCO_MODEL_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
 
+
 class InferenceConfig(InputConfig):
     GPU_COUNT = 1
     IMAGES_PER_GPU = 1
+
+
+def overall_perfomance(model, dataset_val, inference_config):
+    image_ids = dataset_val.image_ids# np.random.choice(dataset_val.image_ids, 10)
+    APs = []
+    for image_id in image_ids:
+        # Load image and ground truth data
+        image, image_meta, gt_class_id, gt_bbox, gt_mask =\
+            modellib.load_image_gt(dataset_val, inference_config,
+                                   image_id, use_mini_mask=False)
+        # molded_images = np.expand_dims(modellib.mold_image(image, inference_config), 0)
+        # Run object detection
+        results = model.detect([image], verbose=0)
+        r = results[0]
+        # Compute AP
+        if (gt_mask.shape[-1] == 0) or (r['masks'].shape[-1] == 0):
+            print(image_id, " skipped")
+            continue
+        AP, precisions, recalls, overlaps =\
+            utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
+                             r["rois"], r["class_ids"], r["scores"], r['masks'])
+        APs.append(AP)
+    print("mAP: ", np.mean(APs))
+    print("prec: ", np.mean(precisions))
+    print("recall: ", np.mean(recalls))
+    print("overlap: ", np.mean(overlaps))
 
 
 def evaluate(dataset_val):
@@ -64,38 +94,17 @@ def evaluate(dataset_val):
     print("Loading weights from ", model_path)
     model.load_weights(model_path, by_name=True)
 
-    image_ids = dataset_val.image_ids# np.random.choice(dataset_val.image_ids, 10)
-    APs = []
-    for image_id in image_ids:
-        # Load image and ground truth data
-        image, image_meta, gt_class_id, gt_bbox, gt_mask =\
-            modellib.load_image_gt(dataset_val, inference_config,
-                                   image_id, use_mini_mask=False)
-        # molded_images = np.expand_dims(modellib.mold_image(image, inference_config), 0)
-        # Run object detection
-        results = model.detect([image], verbose=0)
-        r = results[0]
-        # Compute AP
-        if (gt_mask.shape[-1] == 0) or (r['masks'].shape[-1] == 0):
-            print(image_id, " skipped")
-            continue
-        AP, precisions, recalls, overlaps =\
-            utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
-                             r["rois"], r["class_ids"], r["scores"], r['masks'])
-        APs.append(AP)
-    print("mAP: ", np.mean(APs))
-    print("prec: ", np.mean(precisions))
-    print("recall: ", np.mean(recalls))
-    print("overlap: ", np.mean(overlaps))
+    #overall_perfomance(model, dataset_val, inference_config)
     #fig, ax = plt.subplots(1, 1, figsize=(12, 10))
     #visualize.plot_precision_recall(AP, precisions, recalls, ax=ax)
     #fig.savefig('roc_curve')
-    for i in range(20):
-        test_rand_image(model, dataset_val, inference_config)
+    #for i in range(1):
+    for i in [267]:
+        test_rand_image(model, dataset_val, inference_config, i)
 
 
-def test_rand_image(model, dataset_val, inference_config):
-    image_id = random.choice(dataset_val.image_ids)
+def test_rand_image(model, dataset_val, inference_config, image_id):
+    #image_id = random.choice(dataset_val.image_ids)
     original_image, image_meta, gt_class_id, gt_bbox, gt_mask =\
         modellib.load_image_gt(dataset_val, inference_config,
                                image_id, use_mini_mask=False)
@@ -111,13 +120,24 @@ def test_rand_image(model, dataset_val, inference_config):
         print(image_id, " skipped")
         return
     fig, axarr = plt.subplots(1, 2, figsize=(12, 10))
-    visualize.display_instances(original_image, gt_bbox, gt_mask, gt_class_id,
-                                dataset_val.class_names, ax=axarr[0])
+    #visualize.display_instances(original_image, gt_bbox, gt_mask, gt_class_id,
+    #                            dataset_val.class_names, ax=axarr[0], limits=[20, 100])
     #plt.savefig('disp1')
-    visualize.display_instances(original_image, r['rois'], r['masks'],
-                                r['class_ids'], dataset_val.class_names,
-                                r['scores'], ax=axarr[1])
-    fig.savefig('true_output_' + str(image_id))
+    #visualize.display_instances(original_image, r['rois'], r['masks'],
+    #                            r['class_ids'], dataset_val.class_names,
+    #                            r['scores'], ax=axarr[1], limits=[20, 100])
+    #fig.savefig('true_output_' + str(image_id))
+    #fig, ax = plt.subplots(1, 1, figsize=(12, 10))
+    axarr[0].imshow(original_image.astype(np.uint8()), interpolation='none')
+    axarr[0].set_xlim([20, 100])
+    axarr[0].set_ylim([20, 100])
+    axarr[0].axis('off')
+    visualize.display_differences(original_image, gt_bbox, gt_class_id,
+                                  gt_mask, r['rois'], r['class_ids'],
+                                  r['scores'], r['masks'],
+                                  dataset_val.class_names, ax=axarr[1],
+                                  limits=[20, 108], mask_alpha=0.1)
+    fig.savefig('true_output_diff_' + str(image_id))
 
 
 def main():
@@ -127,11 +147,13 @@ def main():
     config = train.InputConfig()
     config.display()
     # Validation dataset
-    image_ids = np.random.choice(dataset_val.image_ids, 2)
+    image_ids = np.random.choice(dataset_val.image_ids, 5)
+    image_ids = [267]
     for image_id in image_ids:
         image = dataset_val.load_image(image_id)
         mask, class_ids = dataset_val.load_mask(image_id)
-        visualize.display_top_masks(image, mask, class_ids, dataset_val.class_names)
+        visualize.display_sep_masks(image, mask, class_ids, dataset_val.class_names,
+                                    limit=2)
         plt.savefig("input_" +str(image_id))
 
     evaluate(dataset_val)
