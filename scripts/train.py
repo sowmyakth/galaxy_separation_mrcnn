@@ -12,7 +12,7 @@ ROOT_DIR = '/home/users/sowmyak/NN_blend/Mask_RCNN'
 # Directory to save logs and trained model
 
 MODEL_DIR = '/scratch/users/sowmyak/lavender/logs'
-#MODEL_DIR = os.path.join(ROOT_DIR, "logs")
+# MODEL_DIR = os.path.join(ROOT_DIR, "logs")
 
 # path to images
 DATA_PATH = '/scratch/users/sowmyak/lavender'
@@ -22,7 +22,7 @@ sys.path.append(CODE_PATH)
 import display
 
 # MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final20180608T2004/mask_rcnn_blend_final_0050.h5'
-MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final_again20180608T2004/mask_rcnn_blend_final_again_0080.h5'
+MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final_again20180608T2004/mask_rcnn_blend_final_again_0100.h5'
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
@@ -30,6 +30,16 @@ from mrcnn import utils
 import mrcnn.model as modellib
 # from mrcnn.model import log
 
+
+def normalize(im1, im2, c_index=2):
+    vmin = im1.min(axis=0).min(axis=0)[c_index]
+    vmax = im1.max(axis=0).max(axis=0)[c_index]
+    result = np.zeros_like(im2)
+    result[:] = im2
+    result[result < vmin] = vmin
+    result[result > vmax] = vmax
+    result = (result - vmin) / (vmax - vmin)
+    return np.array(result * 255, dtype=np.uint8)
 
 
 class InputConfig(Config):
@@ -43,7 +53,7 @@ class InputConfig(Config):
     # Train on 1 GPU and 8 images per GPU. We can put multiple images on each
     # GPU because the images are small. Batch size is 8 (GPUs * images/GPU).
     GPU_COUNT = 2
-    IMAGES_PER_GPU = 32
+    IMAGES_PER_GPU = 8 #32
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 1  # background + 3 shapes
@@ -61,14 +71,15 @@ class InputConfig(Config):
     TRAIN_ROIS_PER_IMAGE = 16
 
     # Use a small epoch since the data is simple
-    STEPS_PER_EPOCH = 200
+    STEPS_PER_EPOCH = 500 #200
 
     # use small validation steps since the epoch is small
-    VALIDATION_STEPS = 10
+    VALIDATION_STEPS = 40 #10
     # modifications here
     LEARNING_RATE = 0.001
     BACKBONE_STRIDES = [4, 8, 16, 32, 64]
     DETECTION_MIN_CONFIDENCE = 0.8
+    USE_MINI_MASK = False
 
 
 class ShapesDataset(utils.Dataset):
@@ -81,29 +92,35 @@ class ShapesDataset(utils.Dataset):
         Keyword Arguments:
             filename -- numpy file where data is saved
         """
-        #filename = os.path.join(DATA_PATH, 'lavender_temp/stamps2.pickle')
-        #filename = os.path.join(DATA_PATH, 'lavender_temp/stamps2.dill')
-        #with open(filename, 'rb') as handle:
-            #data = pickle.load(handle)
+        # filename = os.path.join(DATA_PATH, 'lavender_temp/stamps2.pickle')
+        # filename = os.path.join(DATA_PATH, 'lavender_temp/stamps2.dill')
+        # with open(filename, 'rb') as handle:
+        #    data = pickle.load(handle)
         #    data = dill.load(handle)
-        self.X = {}
-        names = ('blend_image', 'loc2', 'loc1')
+        self.X, self.Y = {}, {}
+        x_names = ('blend_image', 'loc2', 'loc1')
+        y_names = ('Y1', 'Y2')
         if training:
-            #self.X = data['X_train']
-            for name in names:
-                #filename = os.path.join(DATA_PATH, 'lavender_temp/train_' + name +'.npy')
-                #self.X[name] = np.load(filename)
-                filename = os.path.join(DATA_PATH, 'lavender_temp/train_' + name +'.h5')
+            for name in x_names:
+                filename = os.path.join(DATA_PATH,
+                                        'lavender_temp/train_' + name + '.h5')
                 with h5py.File(filename, 'r') as hf:
                     self.X[name] = hf[name][:]
                 print(self.X[name].shape)
-            #self.Y = data['Y_train']
+            for name in y_names:
+                filename = os.path.join(DATA_PATH,
+                                        'lavender_temp/train_' + name + '.h5')
+                with h5py.File(filename, 'r') as hf:
+                    self.Y[name] = hf[name][:]
         else:
-            #self.X = data['X_val']
-            #self.Y = data['Y_val']
-            for name in names:
-                filename = os.path.join(DATA_PATH, 'lavender_temp/val_' + name +'.npy')
+            for name in x_names:
+                filename = os.path.join(DATA_PATH,
+                                        'lavender_temp/val_' + name + '.npy')
                 self.X[name] = np.load(filename)
+            for name in y_names:
+                filename = os.path.join(DATA_PATH,
+                                        'lavender_temp/val_' + name + '.npy')
+                self.Y[name] = np.load(filename)
         if count is None:
             count = len(self.X['blend_image'])
         self.load_objects(count)
@@ -130,9 +147,11 @@ class ShapesDataset(utils.Dataset):
         Typically this function loads the image from a file, but
         in this case it generates the image on the fly from the
         specs in image_info.
+        returns RGB Image [height, width, bands]
         """
         image = self.X['blend_image'][image_id, :, :, :]
-        rgb_image = display.img_to_rgb(image.T)
+        #rgb_image = display.img_to_rgb(image.T)
+        rgb_image = display.img_to_rgb(np.transpose(image, axes=(2, 0, 1)))
         return rgb_image
 
     def load_debl_image(self, image_id):
@@ -141,10 +160,23 @@ class ShapesDataset(utils.Dataset):
         in this case it generates the image on the fly from the
         specs in image_info.
         """
-        im1 = self.X['Y1'][image_id, :, :, 0]
-        im2 = self.X['Y2'][image_id, :, :, 0]
+        image = self.X['blend_image'][image_id, :, :, :]
+        im1 = normalize(image, self.Y['Y1'][image_id, :, :, 0], c_index=2)
+        im2 = normalize(image, self.Y['Y2'][image_id, :, :, 0], c_index=2)
         debl_image = np.dstack([im1, im2])
         return debl_image
+
+    def load_mult_image(self, image_id):
+        """Generate an image from the specs of the given image ID.
+        Typically this function loads the image from a file, but
+        in this case it generates the image on the fly from the
+        specs in image_info.
+        """
+        image = self.X['blend_image'][image_id, :, :, :]
+        #rgb_image = display.img_to_rgb(image.T)
+        #i_image = display.img_to_rgb(image[:, :, 2], norm=norm)
+        i_image = normalize(image, image[:, :, 2], c_index=2)
+        return np.dstack([i_image, i_image])
 
     def image_reference(self, image_id):
         """Return the shapes data of the image."""
@@ -157,8 +189,8 @@ class ShapesDataset(utils.Dataset):
     def load_mask(self, image_id):
         """Generate instance masks for shapes of the given image ID.
         """
-        mask1 = np.transpose(self.X['loc1'][image_id], axes=(1, 0, 2))
-        mask2 = np.transpose(self.X['loc2'][image_id], axes=(1, 0, 2))
+        mask1 = self.X['loc1'][image_id]
+        mask2 = self.X['loc2'][image_id]
         mask = np.dstack([mask1, mask2])
         # Map class names to class IDs.
         class_ids = np.array([1, 1])
@@ -167,6 +199,8 @@ class ShapesDataset(utils.Dataset):
 
 def plot_history(history, string='training'):
     print(history.history.keys())
+    loss_names = ['rpn_class_loss', 'rpn_bbox_loss', 'mrcnn_class_loss',
+                  'mrcnn_bbox_loss', 'mrcnn_debl_loss']
     fig, ax = plt.subplots(1, 3, figsize=(14, 8))
     ax[0].plot(history.history['loss'], label='train_loss')
     ax[0].plot(history.history['val_loss'], label='val_loss')
@@ -174,35 +208,20 @@ def plot_history(history, string='training'):
     ax[0].set_ylabel('loss')
     ax[0].set_xlabel('epoch')
     ax[0].legend(loc='upper left')
-
-    ax[1].plot(history.history['rpn_class_loss'], label='train_rpn_class_loss')
-    ax[1].plot(history.history['rpn_bbox_loss'], label='train_rpn_bbox_loss')
-    ax[1].plot(history.history['mrcnn_class_loss'], label='train_mrcnn_class_loss')
-    ax[1].plot(history.history['mrcnn_bbox_loss'], label='train_mrcnn_bbox_loss')
-    ax[1].plot(history.history['mrcnn_mask_loss'], label='train_mrcnn_mask_loss')
+    for name in loss_names:
+        ax[1].plot(history.history[name], label='train_' + name)
     ax[1].set_title('train loss')
     ax[1].set_ylabel('loss')
     ax[1].set_xlabel('epoch')
     ax[1].legend(loc='upper left')
-
-    ax[2].plot(history.history['val_rpn_class_loss'], label='val_rpn_class_loss')
-    ax[2].plot(history.history['val_rpn_bbox_loss'], label='val_rpn_bbox_loss')
-    ax[2].plot(history.history['val_mrcnn_class_loss'], label='val_mrcnn_class_loss')
-    ax[2].plot(history.history['val_mrcnn_bbox_loss'], label='val_mrcnn_bbox_loss')
-    ax[2].plot(history.history['val_mrcnn_mask_loss'], label='val_mrcnn_mask_loss')
+    for name in loss_names:
+        ax[2].plot(history.history['val_' + name], label='val_' + name)
     ax[2].set_title('val loss')
     ax[2].set_ylabel('loss')
     ax[2].set_xlabel('epoch')
     ax[2].legend(loc='upper left')
     name = string + '_loss'
     fig.savefig(name)
-    #loss_names = [
-    #        "rpn_class_loss",  "rpn_bbox_loss",
-    #        "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss"]
-    #loss_names = loss_names + ['val_' + l for l in loss_names]
-    #data={}
-    #for name in loss_names:
-    #    data[name] = 
     with open(name + ".dill", 'wb') as handle:
         dill.dump(history.history, handle)
 
@@ -210,11 +229,13 @@ def plot_history(history, string='training'):
 def main():
     config = InputConfig()
     config.display()
+    model = modellib.MaskRCNN(mode="training", config=config,
+                              model_dir=MODEL_DIR)
     # Training dataset# Train
     dataset_train = ShapesDataset()
     dataset_train.load_data()
     dataset_train.prepare()
-    #import ipdb;ipdb.set_trace()
+    # import ipdb;ipdb.set_trace()
 
     # Validation dataset
     dataset_val = ShapesDataset()
@@ -225,7 +246,7 @@ def main():
     model = modellib.MaskRCNN(mode="training", config=config,
                               model_dir=MODEL_DIR)
 
-    # Which weights to start with?# Which 
+    # Which weights to start with?# Which
     if MODEL_PATH:
         model_path = MODEL_PATH
     else:
@@ -234,20 +255,30 @@ def main():
     print("Loading weights from ", model_path)
     model.load_weights(model_path, by_name=True)
     # Training - Stage 1
-    print("Fine tune all layers")
+    print("all layers")
+    #history1 = model.train(dataset_train, dataset_val,
+    #                       learning_rate=config.LEARNING_RATE,
+    #                       epochs=110,
+    #                       layers='all')
+    #plot_history(history1, config.NAME + '_debl_fast')
     history1 = model.train(dataset_train, dataset_val,
-                          learning_rate=config.LEARNING_RATE,
-                          epochs=60,
-                          layers='all')
-    plot_history(history1, config.NAME + '_fast')
-        # Training - Stage 3
-    # Fine tune all layers
-    print("Fine tune all layers")
+                           learning_rate=config.LEARNING_RATE,
+                           epochs=110,
+                           layers='heads')
+    plot_history(history1, config.NAME + '_debl_head')
     history2 = model.train(dataset_train, dataset_val,
-                          learning_rate=config.LEARNING_RATE / 10,
-                          epochs=80,
-                          layers='all')
-    plot_history(history2, config.NAME + '_slow')
+                           learning_rate=config.LEARNING_RATE,
+                           epochs=125,
+                           layers='all')
+    plot_history(history2, config.NAME + '_debl_fast2')
+    # Training - Stage 3
+    # Fine tune all layers
+    #print("Fine tune all layers")
+    #history2 = model.train(dataset_train, dataset_val,
+    #                       learning_rate=config.LEARNING_RATE / 10,
+    #                       epochs=110,
+    #                       layers='all')
+    #plot_history(history2, config.NAME + '_debl_slow')
 
 
 if __name__ == "__main__":
