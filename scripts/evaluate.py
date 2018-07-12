@@ -1,9 +1,9 @@
 import os
 import sys
 import numpy as np
-import pickle
-import dill
-import random
+# import pickle
+# import dill
+# import random
 import matplotlib; matplotlib.use('Agg')
 matplotlib.rcParams['figure.subplot.wspace'] = 0.05
 matplotlib.rcParams['figure.subplot.hspace'] = 0.05
@@ -20,7 +20,8 @@ MODEL_DIR = os.path.join(ROOT_DIR, "logs")
 DATA_PATH = '/scratch/users/sowmyak/lavender'
 
 CODE_PATH = '/home/users/sowmyak/NN_blend/scripts'
-MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final_again20180608T2004/mask_rcnn_blend_final_again_0080.h5'
+# MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final_again20180608T2004/mask_rcnn_blend_final_again_0080.h5'
+MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final_again20180608T2004/mask_rcnn_blend_final_again_0100.h5'
 #MODEL_PATH =None
 sys.path.append(CODE_PATH)
 import display
@@ -43,13 +44,13 @@ class InferenceConfig(InputConfig):
     GPU_COUNT = 1
     IMAGES_PER_GPU = 1
 
-
+# image, image_meta, class_ids, bbox, mask, debl_image, mult_image
 def overall_perfomance(model, dataset_val, inference_config):
     image_ids = dataset_val.image_ids# np.random.choice(dataset_val.image_ids, 10)
     APs = []
     for image_id in image_ids:
         # Load image and ground truth data
-        image, image_meta, gt_class_id, gt_bbox, gt_mask =\
+        image, image_meta, gt_class_id, gt_bbox, gt_mask, _, _ =\
             modellib.load_image_gt(dataset_val, inference_config,
                                    image_id, use_mini_mask=False)
         # molded_images = np.expand_dims(modellib.mold_image(image, inference_config), 0)
@@ -98,17 +99,17 @@ def evaluate(dataset_val):
     #fig, ax = plt.subplots(1, 1, figsize=(12, 10))
     #visualize.plot_precision_recall(AP, precisions, recalls, ax=ax)
     #fig.savefig('roc_curve')
-    #for i in range(1):
+    #for i in range(5):
     for i in [267]:
         test_rand_image(model, dataset_val, inference_config, i)
 
 
 def test_rand_image(model, dataset_val, inference_config, image_id):
     #image_id = random.choice(dataset_val.image_ids)
-    original_image, image_meta, gt_class_id, gt_bbox, gt_mask =\
+    original_image, image_meta, gt_class_id, gt_bbox, gt_mask, gt_debl, gt_mult =\
         modellib.load_image_gt(dataset_val, inference_config,
                                image_id, use_mini_mask=False)
-
+    print("mul_image", gt_mult.shape)
     #log("original_image", original_image)
     #log("image_meta", image_meta)
     #log("gt_class_id", gt_class_id)
@@ -116,10 +117,11 @@ def test_rand_image(model, dataset_val, inference_config, image_id):
     #log("gt_mask", gt_mask)
     results = model.detect([original_image], verbose=1)
     r = results[0]
+    print("maax mask", np.max(r['masks']))
     if (gt_mask.shape[-1] == 0) or (r['masks'].shape[-1] == 0):
         print(image_id, " skipped")
         return
-    fig, axarr = plt.subplots(1, 2, figsize=(12, 10))
+    #fig, axarr = plt.subplots(1, 2, figsize=(12, 10))
     #visualize.display_instances(original_image, gt_bbox, gt_mask, gt_class_id,
     #                            dataset_val.class_names, ax=axarr[0], limits=[20, 100])
     #plt.savefig('disp1')
@@ -128,16 +130,21 @@ def test_rand_image(model, dataset_val, inference_config, image_id):
     #                            r['scores'], ax=axarr[1], limits=[20, 100])
     #fig.savefig('true_output_' + str(image_id))
     #fig, ax = plt.subplots(1, 1, figsize=(12, 10))
-    axarr[0].imshow(original_image.astype(np.uint8()), interpolation='none')
-    axarr[0].set_xlim([20, 100])
-    axarr[0].set_ylim([20, 100])
-    axarr[0].axis('off')
-    visualize.display_differences(original_image, gt_bbox, gt_class_id,
-                                  gt_mask, r['rois'], r['class_ids'],
-                                  r['scores'], r['masks'],
-                                  dataset_val.class_names, ax=axarr[1],
-                                  limits=[20, 108], mask_alpha=0.1)
-    fig.savefig('true_output_diff_' + str(image_id))
+    # axarr[0].imshow(original_image.astype(np.uint8()), interpolation='none')
+    #axarr[0].imshow(original_image, interpolation='none')
+    #axarr[0].set_xlim([20, 100])
+    #axarr[0].set_ylim([20, 100])
+    #axarr[0].axis('off')
+    visualize.display_debl_input(original_image, r['masks'], r['debl'], gt_mult[:,:,0],
+                                 r['class_ids'], dataset_val.class_names,
+                                     limit=5)
+    #visualize.display_differences(original_image, gt_bbox, gt_class_id,
+    #                              gt_mask, r['rois'], r['class_ids'],
+    #                              r['scores'], r['masks'],
+    #                              dataset_val.class_names, ax=axarr[1],
+    #                              limits=[20, 108], mask_alpha=0.1)
+    #fig.savefig('debl_output_' + str(image_id))
+    plt.savefig('debl_output_' + str(image_id))
 
 
 def main():
@@ -152,9 +159,15 @@ def main():
     for image_id in image_ids:
         image = dataset_val.load_image(image_id)
         mask, class_ids = dataset_val.load_mask(image_id)
-        visualize.display_sep_masks(image, mask, class_ids, dataset_val.class_names,
-                                    limit=2)
-        plt.savefig("input_" +str(image_id))
+        debl = dataset_val.load_debl_image(image_id)
+        mult_image = dataset_val.load_mult_image(image_id)[:, :, 0]
+        print(mult_image.shape)
+        # visualize.display_sep_masks(image, mask, class_ids, dataset_val.class_names,
+        #                            limit=2)
+        visualize.display_debl_input(image, mask, debl, mult_image,
+                                     class_ids, dataset_val.class_names,
+                                     limit=6)
+        plt.savefig("input_debl_" +str(image_id))
 
     evaluate(dataset_val)
 

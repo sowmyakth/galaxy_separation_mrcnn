@@ -1033,7 +1033,16 @@ def l2_loss(y_true, y_pred):
     """
     diff = (y_true - y_pred)**2
     loss = K.mean(diff)
-    return loss / 2. /255.
+    return loss / 2. / 255.
+
+
+def l2_loss_noise(y_true, y_pred, sigma):
+    """Implements Smooth-L1 loss.
+    y_true and y_pred are typicallly: [N, 4], but could be any shape.
+    """
+    diff = (y_true - y_pred)**2
+    loss = K.mean(diff)
+    return loss / 2. / tf.exp(sigma) + sigma
 
 
 def rpn_class_loss_graph(rpn_match, rpn_class_logits):
@@ -1256,7 +1265,7 @@ def mrcnn_debl_loss_graph(target_images, target_class_ids,
     y_pred = get_image_from_mask(y_mask, y_mult)
     print("3 ", y_true.get_shape(), y_mask.get_shape(), y_mult.get_shape())
     # Compute L2 Loss
-    loss = l2_loss(y_true, y_pred)
+    loss = l2_loss_noise(y_true, y_pred)
     return loss
 
 
@@ -1920,6 +1929,7 @@ class MaskRCNN():
             shape=[None, None, 3], name="input_image")
         input_image_meta = KL.Input(shape=[config.IMAGE_META_SIZE],
                                     name="input_image_meta")
+        # sigma = K.variable(np.ones(config.BATCH_SIZE) * 4, name="sigma")
         if mode == "training":
             # RPN GT
             input_rpn_match = KL.Input(
@@ -2148,12 +2158,10 @@ class MaskRCNN():
                                               config.MASK_POOL_SIZE,
                                               config.NUM_CLASSES,
                                               train_bn=config.TRAIN_BN)
-
             model = KM.Model([input_image, input_image_meta, input_anchors],
                              [detections, mrcnn_class, mrcnn_bbox,
-                              rpn_rois, rpn_class, rpn_bbox],
+                              mrcnn_mask, rpn_rois, rpn_class, rpn_bbox],
                              name='mask_rcnn')
-
         # Add multi-GPU support.
         if config.GPU_COUNT > 1:
             from mrcnn.parallel_model import ParallelModel
@@ -2513,7 +2521,7 @@ class MaskRCNN():
         # How many detections do we have?
         # Detections array is padded with zeros. Find the first class_id == 0.
         original_image_shape = original_image.shape
-        mult_image = original_image[:, :, 0]
+        mult_image = original_image[:, :, 2]
         zero_ix = np.where(detections[:, 4] == 0)[0]
         N = zero_ix[0] if zero_ix.shape[0] > 0 else detections.shape[0]
 
@@ -2556,11 +2564,12 @@ class MaskRCNN():
                                           threshold=0, boolean=False)
             full_masks.append(full_mask)
             debl_images.append(full_mask * mult_image)
-        full_masks = np.stack(full_masks, axis=-1)\
-            if full_masks else np.empty(masks.shape[1:3] + (0,))
+        print (full_masks[0].max(), len(full_masks))
+        full_masks = np.stack(full_masks, axis=-1)#\
+        #    if len(full_masks) >0 else np.empty(masks.shape[1:3] + (0,))
         debl_images = np.stack(debl_images, axis=-1)\
-            if debl_images else np.empty(masks.shape[1:3] + (0,))
-
+            if len(debl_images) > 0 else np.empty(masks.shape[1:3] + (0,))
+        print (full_masks.max())
         return boxes, class_ids, scores, full_masks, debl_images
 
     # this is run in inference mode

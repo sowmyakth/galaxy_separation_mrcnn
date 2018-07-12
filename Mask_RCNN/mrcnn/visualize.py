@@ -54,8 +54,14 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
         plt.subplot(rows, cols, i)
         plt.title(title, fontsize=9)
         plt.axis('off')
-        plt.imshow(image.astype(np.uint8), cmap=cmap,
+        if image.dtype == bool:
+            image = image.astype(np.uint8)
+        plt.imshow(image, cmap=cmap,
                    norm=norm, interpolation=interpolation)
+        print(image.shape)
+        print(image.dtype)
+        if len(image.shape) == 2:
+            plt.colorbar()
         #modified
         #plt.imshow(image, cmap=cmap,
         #           norm=norm, interpolation=interpolation)
@@ -222,7 +228,8 @@ def display_differences(image,
         title="", limits=limits, mask_alpha=mask_alpha)
 
 
-def draw_rois(image, rois, refined_rois, mask, class_ids, class_names, limit=10):
+def draw_rois(image, rois, refined_rois, mask,
+              class_ids, class_names, limit=10):
     """
     anchors: [n, (y1, x1, y2, x2)] list of anchors in image coordinates.
     proposals: [n, 4] the same anchors but refined to fit objects better.
@@ -319,7 +326,8 @@ def display_top_masks(image, mask, class_ids, class_names, limit=4):
     display_images(to_display, titles=titles, cols=limit + 1, cmap="Blues_r")
 
 
-def display_sep_masks(image, mask, class_ids, class_names, limit=4, im_limits=None):
+def display_sep_masks(image, mask, class_ids,
+                      class_names, limit=4, im_limits=None):
     """Display the given image and the class masks as separate images."""
     to_display = []
     titles = []
@@ -341,7 +349,85 @@ def display_sep_masks(image, mask, class_ids, class_names, limit=4, im_limits=No
         for i in range(m.shape[-1]):
             to_display.append(mask[:, :, i])
             titles.append(class_names[class_id] + str(i) if class_id != -1 else "-")
-    display_images(to_display, titles=titles, cols=limit + 1, cmap="Blues_r", limits=im_limits)
+    display_images(to_display, titles=titles, cols=limit + 1,
+                   cmap="Blues_r", limits=im_limits)
+
+
+def display_debl_input(image, mask, debl, mult_image, class_ids,
+                 class_names, limit=4, im_limits=None):
+    """Display the given image and the class masks as separate images."""
+    to_display = []
+    titles = []
+    to_display.append(image)
+    to_display.append(mult_image)
+    titles.append("H x W={}x{}".format(image.shape[0], image.shape[1]))
+    titles.append("H x W={}x{}".format(mult_image.shape[0], mult_image.shape[1]))
+    print("debl", debl.shape)
+    diff = np.sum(debl, -1) - mult_image
+    to_display.append(diff)
+    titles.append('diff')
+    # Pick top prominent classes in this image
+    unique_class_ids = np.unique(class_ids)
+    mask_area = [np.sum(mask[:, :, np.where(class_ids == i)[0]])
+                 for i in unique_class_ids]
+    top_ids = [v[0] for v in sorted(zip(unique_class_ids, mask_area),
+                                    key=lambda r: r[1], reverse=True) if v[1] > 0]
+    # Generate images and titles
+    for i in range(limit):
+        class_id = top_ids[i] if i < len(top_ids) else -1
+        # Pull masks of instances belonging to the same class.
+        m = mask[:, :, np.where(class_ids == class_id)[0]]
+        d = debl[:, :, np.where(class_ids == class_id)[0]]
+        #m = np.sum(m * np.arange(1, m.shape[-1] + 1), -1)
+        print ("mask shape", m.shape, len(m))
+        for i in range(m.shape[-1]):
+            to_display.append(m[:, :, i])
+            print("mask max", np.max(m[:, :, i]))
+            to_display.append(d[:, :, i])
+            titles.append(class_names[class_id] + str(i) if class_id != -1 else "-")
+            titles.append("debl"+ class_names[class_id] + str(i) if class_id != -1 else "-")
+    display_images(to_display, titles=titles, cols=limit + 1,
+                   cmap="Blues_r", limits=im_limits)
+
+
+def display_debl_differences(image, gt_box, gt_class_id,
+                             gt_mask, gt_debl,
+                             pred_box, pred_class_id, pred_score,
+                             pred_mask, pred_debl,
+                             class_names, title="", ax=None,
+                             show_mask=True, show_box=True,
+                             iou_threshold=0.5, score_threshold=0.5,
+                             limits=None, mask_alpha=0.2):
+    """Display ground truth and prediction instances on the same image."""
+    # Match predictions to ground truth
+    gt_match, pred_match, overlaps = utils.compute_matches(
+        gt_box, gt_class_id, gt_mask,
+        pred_box, pred_class_id, pred_score, pred_mask,
+        iou_threshold=iou_threshold, score_threshold=score_threshold)
+    # Ground truth = green. Predictions = red
+    colors = [(0, 1, 0, .8)] * len(gt_match)\
+           + [(1, 0, 0, 1)] * len(pred_match)
+    # Concatenate GT and predictions
+    class_ids = np.concatenate([gt_class_id, pred_class_id])
+    scores = np.concatenate([np.zeros([len(gt_match)]), pred_score])
+    boxes = np.concatenate([gt_box, pred_box])
+    masks = np.concatenate([gt_mask, pred_mask], axis=-1)
+    # Captions per instance show score/IoU
+    captions = ["" for m in gt_match] + ["{:.2f} / {:.2f}".format(
+        pred_score[i],
+        (overlaps[i, int(pred_match[i])]
+            if pred_match[i] > -1 else overlaps[i].max()))
+            for i in range(len(pred_match))]
+    # Set title if not provided
+    title = title or "Ground Truth and Detections\n GT=green, pred=red, captions: score/IoU"
+    # Display
+    display_instances(
+        image,
+        boxes, masks, class_ids,
+        class_names, scores, ax=ax,
+        show_bbox=False, show_mask=show_mask,
+        colors=colors, captions=None,
+        title="", limits=limits, mask_alpha=mask_alpha)
 
 
 def plot_precision_recall(AP, precisions, recalls, ax=None):
