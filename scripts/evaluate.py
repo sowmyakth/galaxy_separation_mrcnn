@@ -21,11 +21,16 @@ DATA_PATH = '/scratch/users/sowmyak/lavender'
 
 CODE_PATH = '/home/users/sowmyak/NN_blend/scripts'
 # MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final_again20180608T2004/mask_rcnn_blend_final_again_0080.h5'
-MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final_again20180608T2004/mask_rcnn_blend_final_again_0100.h5'
-#MODEL_PATH =None
+# MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_final_again20180608T2004/mask_rcnn_blend_final_again_0123.h5'
+#MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_test20180717T1318/mask_rcnn_blend_test_0045.h5'
+#MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_test_again20180718T2130/mask_rcnn_blend_test_again_0080.h5'
+#MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_test_again20180719T1635/mask_rcnn_blend_test_again_0058.h5'
+#MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_test_again220180721T0202/mask_rcnn_blend_test_again2_0044.h5'
+MODEL_PATH = '/scratch/users/sowmyak/lavender/logs/blend_new_loss20180723T1101/mask_rcnn_blend_new_loss_0070.h5'
 sys.path.append(CODE_PATH)
 import display
-import train as train
+#import train as train
+import train2 as train
 #import train_final_again as train
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
@@ -37,7 +42,7 @@ from mrcnn import visualize
 from mrcnn.model import log
 # from mrcnn.model import log
 
-COCO_MODEL_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
+#COCO_MODEL_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
 
 
 class InferenceConfig(InputConfig):
@@ -99,9 +104,11 @@ def evaluate(dataset_val):
     #fig, ax = plt.subplots(1, 1, figsize=(12, 10))
     #visualize.plot_precision_recall(AP, precisions, recalls, ax=ax)
     #fig.savefig('roc_curve')
-    #for i in range(5):
-    for i in [267]:
+    image_ids = np.random.choice(dataset_val.image_ids, 15)
+    for i in image_ids:  # range(5):
+    #for i in [267]:
         test_rand_image(model, dataset_val, inference_config, i)
+    test_rand_image(model, dataset_val, inference_config, 267)
 
 
 def test_rand_image(model, dataset_val, inference_config, image_id):
@@ -117,10 +124,10 @@ def test_rand_image(model, dataset_val, inference_config, image_id):
     #log("gt_mask", gt_mask)
     results = model.detect([original_image], verbose=1)
     r = results[0]
-    print("maax mask", np.max(r['masks']))
     if (gt_mask.shape[-1] == 0) or (r['masks'].shape[-1] == 0):
         print(image_id, " skipped")
         return
+    print(image_id, r['scores'])
     #fig, axarr = plt.subplots(1, 2, figsize=(12, 10))
     #visualize.display_instances(original_image, gt_bbox, gt_mask, gt_class_id,
     #                            dataset_val.class_names, ax=axarr[0], limits=[20, 100])
@@ -135,7 +142,8 @@ def test_rand_image(model, dataset_val, inference_config, image_id):
     #axarr[0].set_xlim([20, 100])
     #axarr[0].set_ylim([20, 100])
     #axarr[0].axis('off')
-    visualize.display_debl_input(original_image, r['masks'], r['debl'], gt_mult[:,:,0],
+    rgb_image = display.img_to_rgb(np.transpose(original_image, axes=(2, 0, 1)))
+    visualize.display_debl_output(rgb_image, r['masks'], r['debl'], gt_mult[:,:,0],
                                  r['class_ids'], dataset_val.class_names,
                                      limit=5)
     #visualize.display_differences(original_image, gt_bbox, gt_class_id,
@@ -151,23 +159,35 @@ def main():
     dataset_val = train.ShapesDataset()
     dataset_val.load_data(training=False)
     dataset_val.prepare()
-    config = train.InputConfig()
-    config.display()
+    #config = train.InputConfig()
+    #config.display()
+
+    inference_config = InferenceConfig()
     # Validation dataset
     image_ids = np.random.choice(dataset_val.image_ids, 5)
-    image_ids = [267]
+    image_ids = np.append(image_ids, [267])
+    #image_ids = np.append(image_ids, [699])
+    #image_ids = [267]
     for image_id in image_ids:
         image = dataset_val.load_image(image_id)
+        print("input image", image.shape, np.max(image), image.dtype)
+        rgb_image = display.img_to_rgb(np.transpose(image, axes=(2, 0, 1)))
         mask, class_ids = dataset_val.load_mask(image_id)
         debl = dataset_val.load_debl_image(image_id)
-        mult_image = dataset_val.load_mult_image(image_id)[:, :, 0]
-        print(mult_image.shape)
+
+        mult_image = dataset_val.load_mult_image(image_id)[:, :, 0] # load_mult_image loads 2 images for the 2 overlapping objects
         # visualize.display_sep_masks(image, mask, class_ids, dataset_val.class_names,
         #                            limit=2)
-        visualize.display_debl_input(image, mask, debl, mult_image,
-                                     class_ids, dataset_val.class_names,
-                                     limit=6)
-        plt.savefig("input_debl_" +str(image_id))
+        original_image, image_meta, gt_class_id, gt_bbox, gt_mask, gt_debl, gt_mult =\
+        modellib.load_image_gt(dataset_val, inference_config,
+                               image_id, use_mini_mask=False)
+        rgb_image = display.img_to_rgb(np.transpose(original_image, axes=(2, 0, 1)))
+        print(image_id, gt_bbox.shape, gt_debl.shape)
+        visualize.display_debl_input(rgb_image, gt_bbox, gt_debl, gt_mult[:,:,0],str(image_id))
+        #visualize.display_debl_input(rgb_image, mask, debl, mult_image,
+        #                             class_ids, dataset_val.class_names,
+        #                             limit=6)
+        #plt.savefig("input_debl_" +str(image_id))
 
     evaluate(dataset_val)
 
