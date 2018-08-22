@@ -599,7 +599,8 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes,
 
     # Threshold mask pixels at 0.5 to have GT masks be 0 or 1 to use with
     # binary cross entropy loss.
-    masks = tf.round(masks)
+    ##MODIFIED!!
+    #masks = tf.round(masks)
 
     # Append negative ROIs and pad bbox deltas and masks that
     # are not used for negative ROIs with zeros.
@@ -1007,7 +1008,9 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
 
     x = KL.TimeDistributed(KL.Conv2DTranspose(256, (2, 2), strides=2, activation="relu"),
                            name="mrcnn_mask_deconv")(x)
-    x = KL.TimeDistributed(KL.Conv2D(num_classes, (1, 1), strides=1, activation="sigmoid"),
+    #x = KL.TimeDistributed(KL.Conv2D(num_classes, (1, 1), strides=1, activation="sigmoid"),
+    #                       name="mrcnn_mask")(x)
+    x = KL.TimeDistributed(KL.Conv2D(num_classes, (1, 1), strides=1, activation="relu"),
                            name="mrcnn_mask")(x)
     return x
 
@@ -1027,13 +1030,24 @@ def smooth_l1_loss(y_true, y_pred):
 
 
 # MODIFICATION
-def l2_loss(y_true, y_pred):
+def l2_loss_old(y_true, y_pred):
     """Implements Smooth-L1 loss.
     y_true and y_pred are typicallly: [N, 4], but could be any shape.
     """
     diff = (y_true - y_pred)**2
-    loss = K.mean(diff)
-    return loss / 2. / 255.
+    loss = K.mean(diff, axis=0)
+    loss = K.sum(diff)
+    return loss / 2. / 255. #/ K.shape(y_true)[0]
+
+def l2_loss(y_true, y_pred):
+    """Implements Smooth-L1 loss.
+    y_true and y_pred are typicallly: [N, 4], but could be any shape.
+    """
+    #diff = (y_true - y_pred)**2
+    #loss = K.mean(diff, axis=0)
+    #loss = K.sum(diff)
+    loss = tf.nn.l2_loss(y_true - y_pred)
+    return loss/255. #tf.divide(loss)
 
 
 def l2_loss_noise(y_true, y_pred, sigma):
@@ -1041,7 +1055,8 @@ def l2_loss_noise(y_true, y_pred, sigma):
     y_true and y_pred are typicallly: [N, 4], but could be any shape.
     """
     diff = (y_true - y_pred)**2
-    loss = K.mean(diff)
+    loss = K.mean(diff, axis=0)
+    loss = K.sum(diff)
     return loss / 2. / tf.exp(sigma) + sigma
 
 
@@ -1265,7 +1280,7 @@ def mrcnn_debl_loss_graph(target_images, target_class_ids,
     y_pred = get_image_from_mask(y_mask, y_mult)
     print("3 ", y_true.get_shape(), y_mask.get_shape(), y_mult.get_shape())
     # Compute L2 Loss
-    loss = l2_loss_noise(y_true, y_pred)
+    loss = l2_loss(y_true, y_pred)
     return loss
 
 
@@ -1373,10 +1388,10 @@ def build_detection_targets(rpn_rois, gt_class_ids, gt_boxes,
         gt_boxes.dtype)
     assert gt_masks.dtype == np.bool_, "Expected bool but got {}".format(
         gt_masks.dtype)
-    assert gt_debl.dtype == np.unit8, "Expected unit8 but got {}".format(
-        gt_debl.dtype)
-    assert gt_mult.dtype == np.unit8, "Expected unit8 but got {}".format(
-        gt_mult.dtype)
+    #assert gt_debl.dtype == np.float32, "Expected unit8 but got {}".format(
+    #    gt_debl.dtype)
+    #assert gt_mult.dtype == np.float32, "Expected unit8 but got {}".format(
+    #    gt_mult.dtype)
 
     # It's common to add GT Boxes to ROIs but we don't do that here because
     # according to XinLei Chen's paper, it doesn't help.
@@ -1929,6 +1944,7 @@ class MaskRCNN():
             shape=[None, None, 3], name="input_image")
         input_image_meta = KL.Input(shape=[config.IMAGE_META_SIZE],
                                     name="input_image_meta")
+        #batch_size =  K.variable(config.BATCH_SIZE, name='batchsize',dtype=tf.float32 )
         # sigma = K.variable(np.ones(config.BATCH_SIZE) * 4, name="sigma")
         if mode == "training":
             # RPN GT
@@ -2454,7 +2470,7 @@ class MaskRCNN():
             validation_steps=self.config.VALIDATION_STEPS,
             max_queue_size=100,
             workers=workers,
-            use_multiprocessing=True,
+            use_multiprocessing=False,
         )
         self.epoch = max(self.epoch, epochs)
         print("Keras model fit", self.epoch)
@@ -2564,12 +2580,10 @@ class MaskRCNN():
                                           threshold=0, boolean=False)
             full_masks.append(full_mask)
             debl_images.append(full_mask * mult_image)
-        print (full_masks[0].max(), len(full_masks))
-        full_masks = np.stack(full_masks, axis=-1)#\
-        #    if len(full_masks) >0 else np.empty(masks.shape[1:3] + (0,))
+        full_masks = np.stack(full_masks, axis=-1)\
+            if len(full_masks) >0 else np.empty(masks.shape[1:3] + (0,))
         debl_images = np.stack(debl_images, axis=-1)\
             if len(debl_images) > 0 else np.empty(masks.shape[1:3] + (0,))
-        print (full_masks.max())
         return boxes, class_ids, scores, full_masks, debl_images
 
     # this is run in inference mode
@@ -2900,7 +2914,7 @@ def mold_image(images, config):
 
 def unmold_image(normalized_images, config):
     """Takes a image normalized with mold() and returns the original."""
-    return (normalized_images + config.MEAN_PIXEL).astype(np.uint8)
+    return (normalized_images + config.MEAN_PIXEL)#.astype(np.uint8)
 
 
 ############################################################
