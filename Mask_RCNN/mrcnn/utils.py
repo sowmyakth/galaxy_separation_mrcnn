@@ -571,15 +571,18 @@ def unmold_mask(mask, bbox, image_shape, threshold=0.5, boolean=True):
     Returns a binary mask with the same size as the original image.
     """
     y1, x1, y2, x2 = bbox
+    print(mask.dtype)
+    norm = np.max(mask)
+    mask = mask / norm
     mask = skimage.transform.resize(mask, (y2 - y1, x2 - x1),
                                     order=1, mode="constant")
-    #mask = np.where(mask >= threshold, 1, 0)
+    # mask = np.where(mask >= threshold, 1, 0)
     # Put the mask in the right location.
     if boolean:
         full_mask = np.zeros(image_shape[:2], dtype=np.bool)
     else:
         full_mask = np.zeros(image_shape[:2], dtype=np.float32)
-    full_mask[y1:y2, x1:x2] = mask
+    full_mask[y1:y2, x1:x2] = mask * norm
     return full_mask
 
 
@@ -764,7 +767,6 @@ def compute_ap_range(gt_box, gt_class_id, gt_mask,
     """Compute AP over a range or IoU thresholds. Default range is 0.5-0.95."""
     # Default is 0.5 to 0.95 with increments of 0.05
     iou_thresholds = iou_thresholds or np.arange(0.5, 1.0, 0.05)
-    
     # Compute AP over range of IoU thresholds
     AP = []
     for iou_threshold in iou_thresholds:
