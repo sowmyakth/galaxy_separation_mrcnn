@@ -9,7 +9,6 @@ Written by Waleed Abdulla
 
 import os
 import sys
-import logging
 import random
 import itertools
 import colorsys
@@ -20,8 +19,8 @@ import matplotlib.pyplot as plt
 from matplotlib import patches,  lines
 from matplotlib.patches import Polygon
 import matplotlib
-matplotlib.rcParams['figure.subplot.wspace'] = 0.05
-matplotlib.rcParams['figure.subplot.hspace'] = 0.05
+matplotlib.rcParams['figure.subplot.wspace'] = 0.1
+matplotlib.rcParams['figure.subplot.hspace'] = 0.1
 import IPython.display
 
 # Root directory of the project
@@ -58,8 +57,6 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
             image = image.astype(np.uint8)
         plt.imshow(image, cmap=cmap,
                    norm=norm, interpolation=interpolation)
-        print(image.shape)
-        print(image.dtype)
         if len(image.shape) == 2:
             plt.colorbar()
         #modified
@@ -136,8 +133,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     ax.set_xlim(-10, width + 10)
     ax.axis('off')
     ax.set_title(title)
-
-    masked_image = image.copy()#.astype(np.uint32).copy()
+    masked_image = image.copy()  #.astype(np.uint32).copy()
     for i in range(N):
         color = colors[i]
 
@@ -161,14 +157,15 @@ def display_instances(image, boxes, masks, class_ids, class_names,
             caption = "{} {:.3f}".format(label, score) if score else label
         else:
             caption = captions[i]
-        #MODIFIED
-        #ax.text(x1, y1 + 8, caption,
+        # MODIFIED
+        # ax.text(x1, y1 + 8, caption,
         #        color='w', size=11, backgroundcolor="none")
 
         # Mask
         mask = masks[:, :, i]
         if show_mask:
-            masked_image = apply_mask(masked_image, mask, color, alpha=mask_alpha)
+            masked_image = apply_mask(masked_image, mask,
+                                      color, alpha=mask_alpha)
 
         # Mask Polygon
         # Pad to ensure proper polygons for masks that touch image edges.
@@ -204,7 +201,7 @@ def display_differences(image,
         iou_threshold=iou_threshold, score_threshold=score_threshold)
     # Ground truth = green. Predictions = red
     colors = [(0, 1, 0, .8)] * len(gt_match)\
-           + [(1, 0, 0, 1)] * len(pred_match)
+              + [(1, 0, 0, 1)] * len(pred_match)
     # Concatenate GT and predictions
     class_ids = np.concatenate([gt_class_id, pred_class_id])
     scores = np.concatenate([np.zeros([len(gt_match)]), pred_score])
@@ -215,9 +212,10 @@ def display_differences(image,
         pred_score[i],
         (overlaps[i, int(pred_match[i])]
             if pred_match[i] > -1 else overlaps[i].max()))
-            for i in range(len(pred_match))]
+                for i in range(len(pred_match))]
     # Set title if not provided
-    title = title or "Ground Truth and Detections\n GT=green, pred=red, captions: score/IoU"
+    title = title or "Ground Truth and Detections\n GT=green, pred=red, \
+    captions: score/IoU"
     # Display
     display_instances(
         image,
@@ -352,8 +350,7 @@ def display_sep_masks(image, mask, class_ids,
     display_images(to_display, titles=titles, cols=limit + 1,
                    cmap="Blues_r", limits=im_limits)
 
-
-def display_debl_input(image, mask, debl, mult_image, class_ids,
+def display_debl_output(image, mask, debl, mult_image, class_ids,
                  class_names, limit=4, im_limits=None):
     """Display the given image and the class masks as separate images."""
     to_display = []
@@ -363,8 +360,11 @@ def display_debl_input(image, mask, debl, mult_image, class_ids,
     titles.append("H x W={}x{}".format(image.shape[0], image.shape[1]))
     titles.append("H x W={}x{}".format(mult_image.shape[0], mult_image.shape[1]))
     print("debl", debl.shape)
+    diff = np.sum(debl, -1, dtype=np.uint8) - mult_image
     diff = np.sum(debl, -1) - mult_image
+    print("diff", diff.dtype, np.sum(debl, -1).dtype)
     to_display.append(diff)
+    #titles.append('diff l2:{}'.format(np.sum(diff**2)/2.))
     titles.append('diff')
     # Pick top prominent classes in this image
     unique_class_ids = np.unique(class_ids)
@@ -388,6 +388,43 @@ def display_debl_input(image, mask, debl, mult_image, class_ids,
             titles.append("debl"+ class_names[class_id] + str(i) if class_id != -1 else "-")
     display_images(to_display, titles=titles, cols=limit + 1,
                    cmap="Blues_r", limits=im_limits)
+
+
+def display_debl_input(image, boxes, debl, mult_image, name):
+    """Display the given image and the class masks as separate images."""
+    fig, axarr = plt.subplots(2, 3, figsize=(14, 10))
+    N = debl.shape[2]
+    colors = random_colors(N)
+    axarr[0, 0].imshow(image, interpolation='none', origin='bottom')
+    axarr[0, 0].set_title('input image')
+    axarr[1, 0].imshow(mult_image, interpolation='none', origin='bottom')
+    axarr[1, 0].set_title('mult image')
+    im = [[]] * N
+    for i in range(N):
+        y1, x1, y2, x2 = boxes[i]
+        color = colors[i]
+        p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
+                              alpha=0.7, linestyle="dashed",
+                              edgecolor=color, facecolor='none')
+        axarr[i, 1].imshow(debl[:, :, i], interpolation='none',
+                           origin='bottom')
+        axarr[i, 1].set_title('iso gal ' + str(i + 1))
+        div = debl[:, :, i][y1:y2, x1:x2] / mult_image[y1:y2, x1:x2]
+        im[i] = axarr[i, 2].imshow(div, interpolation='none',
+                                   origin='bottom',
+                                   cmap=plt.get_cmap('bwr'))
+        axarr[i, 2].set_title('seg gal ' + str(i + 1))
+        axarr[i, 1].add_patch(p)
+        fig.colorbar(im[i], ax=axarr[i, 2])
+        p2 = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
+                               alpha=0.7, linestyle="dashed",
+                               edgecolor=color, facecolor='none')
+        axarr[0, 0].add_patch(p2)
+    fig.savefig('input_debl_' + name)
+    fig2, ax = plt.subplots(1, 1, figsize=(14, 10))
+    im2 = ax.imshow(np.sum(debl, axis=-1) - mult_image)
+    fig.colorbar(im2, ax=ax)
+    fig2.savefig('diff_' + name)
 
 
 def display_debl_differences(image, gt_box, gt_class_id,
@@ -481,7 +518,6 @@ def plot_overlaps(gt_class_ids, pred_class_ids, pred_scores,
         plt.text(j, i, "{:.3f}\n{}".format(overlaps[i, j], text),
                  horizontalalignment="center", verticalalignment="center",
                  fontsize=9, color=color)
-
     plt.tight_layout()
     plt.xlabel("Ground Truth")
     plt.ylabel("Predictions")
